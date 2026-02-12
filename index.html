@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gate Pass Pro</title>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<style>
+body{
+margin:0;
+font-family:Arial;
+background:#0f172a;
+color:white;
+}
+
+/* Pages */
+.page{display:none;padding:20px;}
+.active{display:block;}
+
+h2{text-align:center;color:#22c55e;}
+
+input{
+width:100%;
+padding:12px;
+margin:10px 0;
+border:none;
+border-radius:8px;
+font-size:16px;
+}
+
+button{
+width:100%;
+padding:12px;
+margin:8px 0;
+border:none;
+border-radius:8px;
+font-size:16px;
+background:#22c55e;
+color:black;
+font-weight:bold;
+cursor:pointer;
+}
+
+button:hover{background:#16a34a;}
+
+#qr{
+display:flex;
+justify-content:center;
+margin-top:15px;
+}
+
+/* SCANNER PAGE */
+#scanPage{
+position:fixed;
+inset:0;
+background:black;
+display:none;
+justify-content:center;
+align-items:center;
+flex-direction:column;
+}
+
+#reader{
+width:320px;
+height:320px;
+position:relative;
+}
+
+.laser{
+position:absolute;
+width:100%;
+height:2px;
+background:#22c55e;
+animation:scan 2s infinite;
+}
+
+@keyframes scan{
+0%{top:0}
+100%{top:100%}
+}
+
+.backBtn{
+position:absolute;
+top:20px;
+left:20px;
+background:red;
+color:white;
+padding:8px 15px;
+border:none;
+border-radius:6px;
+z-index:1000;
+}
+
+.historyCard{
+background:#111827;
+padding:10px;
+margin-bottom:10px;
+border-radius:8px;
+border:1px solid #22c55e;
+}
+</style>
+</head>
+
+<body>
+
+<!-- HOME -->
+<div id="home" class="page active">
+<h2>Gate Pass System</h2>
+<button onclick="showCreate()">Create Profile</button>
+<button onclick="startScan('OUT')">Scan OUT</button>
+<button onclick="startScan('IN')">Scan IN</button>
+<button onclick="showHistory()">History</button>
+</div>
+
+<!-- CREATE -->
+<div id="create" class="page">
+<h2>Create Profile</h2>
+<input type="text" id="name" placeholder="Student Name">
+<input type="text" id="roll" placeholder="Student ID">
+<button onclick="generateQR()">Generate QR</button>
+<button onclick="downloadQR()">Download QR</button>
+<button onclick="goHome()">Go Home</button>
+<div id="qr"></div>
+</div>
+
+<!-- HISTORY -->
+<div id="history" class="page">
+<h2>OUT Students</h2>
+<div id="historyData"></div>
+<button onclick="goHome()">Go Home</button>
+</div>
+
+<!-- SCAN FULLSCREEN -->
+<div id="scanPage">
+<button class="backBtn" onclick="stopScan()">Back</button>
+<div id="reader">
+<div class="laser"></div>
+</div>
+</div>
+
+<script>
+
+let html5QrCode;
+let scanMode="";
+let scanning=false;
+
+/* PAGE SWITCH */
+function switchPage(id){
+document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+document.getElementById(id).classList.add("active");
+}
+
+function showCreate(){switchPage("create");}
+function showHistory(){switchPage("history");loadHistory();}
+function goHome(){switchPage("home");}
+
+/* GENERATE QR */
+function generateQR(){
+let name=document.getElementById("name").value.trim();
+let roll=document.getElementById("roll").value.trim();
+
+if(!name||!roll){alert("Enter details");return;}
+
+let data=JSON.stringify({name,roll});
+document.getElementById("qr").innerHTML="";
+
+new QRCode(document.getElementById("qr"),{
+text:data,
+width:260,
+height:260,
+correctLevel:QRCode.CorrectLevel.H
+});
+}
+
+/* DOWNLOAD QR */
+function downloadQR(){
+let img=document.querySelector("#qr img");
+if(!img){alert("Generate QR first");return;}
+
+let link=document.createElement("a");
+link.href=img.src;
+link.download="gatepass_qr.png";
+link.click();
+}
+
+/* START SCAN */
+function startScan(mode){
+scanMode=mode;
+document.getElementById("scanPage").style.display="flex";
+
+html5QrCode=new Html5Qrcode("reader");
+scanning=false;
+
+html5QrCode.start(
+{ facingMode:"environment" },
+{
+fps:15,
+qrbox:250
+},
+(decodedText)=>{
+if(!scanning){
+scanning=true;
+handleScan(decodedText);
+}
+}
+).catch(err=>{
+alert("Camera needs HTTPS (Use GitHub Pages)");
+});
+}
+
+/* STOP SCAN */
+function stopScan(){
+if(html5QrCode){
+html5QrCode.stop().then(()=>html5QrCode.clear());
+}
+document.getElementById("scanPage").style.display="none";
+scanning=false;
+}
+
+/* SCAN LOGIC */
+function handleScan(data){
+try{
+let obj=JSON.parse(data);
+let records=JSON.parse(localStorage.getItem("records"))||{};
+
+if(!records[obj.roll]){
+records[obj.roll]={name:obj.name,status:"IN",outTime:null};
+}
+
+if(scanMode==="OUT"){
+
+if(records[obj.roll].status==="OUT"){
+alert("Already OUT");
+scanning=false;
+return;
+}
+
+let now=new Date();
+records[obj.roll].status="OUT";
+records[obj.roll].outTime=now.toLocaleString();
+}
+
+if(scanMode==="IN"){
+
+if(records[obj.roll].status==="IN"){
+alert("Already IN");
+scanning=false;
+return;
+}
+
+records[obj.roll].status="IN";
+records[obj.roll].outTime=null;
+}
+
+localStorage.setItem("records",JSON.stringify(records));
+
+alert("Success");
+setTimeout(()=>stopScan(),500);
+
+}catch(e){
+alert("Invalid QR");
+scanning=false;
+}
+}
+
+/* LOAD HISTORY */
+function loadHistory(){
+let records=JSON.parse(localStorage.getItem("records"))||{};
+let html="";
+
+for(let id in records){
+if(records[id].status==="OUT"){
+html+=`
+<div class="historyCard">
+<b>Name:</b> ${records[id].name}<br>
+<b>ID:</b> ${id}<br>
+<b>OUT Time:</b> ${records[id].outTime}
+</div>
+`;
+}
+}
+
+document.getElementById("historyData").innerHTML=
+html||"<b>No students currently OUT</b>";
+}
+
+</script>
+
+</body>
+</html>
